@@ -1,0 +1,105 @@
+#!/usr/bin/env python3
+"""
+Basic Shell (bsh)
+
+A simple shell implementation that prompts for program names and arguments, launches programs
+with PATH lookup, supports background execution using '&', and runs until 'exit' command is given.
+Features customizable prompt, proper zombie process handling, command failure error messages, and 
+uses only the os and sys modules as required.
+"""
+
+import sys
+import os
+
+
+def main():
+    """Main Function: Implements the shell's main loop and command handling."""
+    
+    # Handle command-line arguments for prompt customization
+    # If no argument is given, use default prompt 'bsh: '
+    # If argument is '-', use no prompt
+    # Otherwise, use the argument as the prompt
+    if len(sys.argv) == 1:
+        prompt = "bsh: "
+    elif sys.argv[1] == "-":
+        prompt = ""
+    else:
+        prompt = sys.argv[1]
+
+    # Main command loop: repeatedly prompt for and execute commands
+    while True:
+        # Display the prompt to the user (without newline)
+        print(prompt, end="", flush=True)
+
+        # Read a line of input from the user
+        try:
+            line = input()
+        except EOFError:
+            # If user sends EOF (Ctrl+D), clean up all zombie child processes before exiting
+            while True:
+                try:
+                    os.wait()  # Wait for any child process to finish
+                except ChildProcessError:
+                    # No more child processes remain
+                    break
+            break  # Exit the shell
+        except KeyboardInterrupt:
+            # If user sends interrupt (Ctrl+C), print a newline and continue the loop
+            print()
+            continue
+
+        # Ignore blank lines (user just pressed Enter)
+        if not line.strip():
+            continue
+
+        # Split the input line into command and arguments
+        words = line.split()
+
+        # If the command is 'exit', clean up and exit the shell
+        if words[0] == "exit":
+            # Clean up all zombie child processes before exiting
+            while True:
+                try:
+                    os.wait()  # Wait for any child process to finish
+                except ChildProcessError:
+                    # No more child processes remain
+                    break
+            break  # Exit the shell
+
+        # Check if the command should run in the background
+        # If last argument is '&', set background flag and remove '&' from arguments
+        background = False
+        if words[-1] == "&":
+            background = True
+            words = words[:-1]  # Remove '&' from command arguments
+            if not words:
+                # If only '&' was entered, ignore and continue
+                continue
+
+        # Fork a new process to execute the command
+        pid = os.fork()
+
+        if pid == 0:
+            # Child process: execute the command using PATH lookup; if command not found, print error and exit
+            try:
+                os.execvp(words[0], words)
+            except os.error as e:
+                # If command execution fails, print error message and exit child process
+                print(f'{words[0]}: {e.strerror}')
+                os._exit(1)  # Exit child process with error code
+        else:
+            # Parent process: handle foreground/background execution
+            if not background:
+                # Wait for the specific child process to finish; also reap any other zombie child processes
+                while True:
+                    try:
+                        child_pid, status = os.wait()
+                        if child_pid == pid:
+                            # The main child process has finished
+                            break
+                    except ChildProcessError:
+                        # No more child processes remain
+                        break
+
+if __name__ == "__main__":
+    main()
